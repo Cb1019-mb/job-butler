@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+
+# 工具缓存(uv 锁文件提交,各类缓存不提交)
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# 日志和临时
+*.log
+*.err
+*.out
+*.pid
+*.tmp
+
+# 运行时数据库(含个人求职数据,严禁入库;seed 题库与回归集为静态演示数据,正常提交)
+data/*.db
+data/*.db-*

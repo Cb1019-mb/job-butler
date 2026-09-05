@@ -1,0 +1,303 @@
+{% extends "base.html" %}
+{% block title %}模拟面试 — 求职管家{% endblock %}
+{% block body %}
+
+<section style="padding: 64px 0 16px;">
+  <p class="eyebrow" style="margin-bottom: 16px;">Step 02 / 面试</p>
+  <h1 class="display" style="font-size: 48px; margin-bottom: 24px;">模拟面试</h1>
+  <p class="lede">每场 5 题,来源固定为:弱点再训练 ×2 + 简历深挖 ×2 + 岗位新知 ×1。作答后三轴流式点评(技术正确性 / 完整性 / 表达结构)。</p>
+</section>
+
+<section>
+  <h2 class="h-section"><span>发起新会话</span><span class="h-index">new</span></h2>
+
+  <form method="post" action="/interview/start" id="form-interview-start" class="grid-2" style="margin-top: 16px; align-items: end;">
+    <div>
+      <label>岗位方向</label>
+      <input type="text" name="role_tag" value="AI 工程师" />
+    </div>
+    <div>
+      <label>公司(可选)</label>
+      <input type="text" name="company" placeholder="如:字节、阿里" />
+    </div>
+    <div style="grid-column: 1 / -1;">
+      <label>使用档案(简历深挖题从所选档案生成)</label>
+      <select name="profile_id" style="max-width: 480px;">
+        <option value="">最新档案(默认)</option>
+        {% for pr in profiles %}
+        <option value="{{ pr.id }}">#{{ pr.id }} · {{ pr.name }}</option>
+        {% endfor %}
+      </select>
+      {% if not profiles %}<p class="meta" style="margin-top: 8px;">还没有档案,请先到"能力档案"页生成一份</p>{% endif %}
+    </div>
+    <div style="grid-column: 1 / -1; display: flex; gap: 16px; align-items: center;">
+      <button type="submit" class="btn" id="btn-interview-start">开始一场新面试 <span class="arrow">→</span></button>
+      <span class="meta" id="interview-start-status"></span>
+    </div>
+  </form>
+</section>
+
+<script>
+// 发起面试表单:提交后立即给等候提示(出题需多次 LLM 调用,约 15~60 秒)
+// 注意:此脚本必须在"当前会话"条件块之外,新会话页面也要有提示
+(function () {
+  var form = document.getElementById('form-interview-start');
+  if (!form) return;
+  var btn = document.getElementById('btn-interview-start');
+  var status = document.getElementById('interview-start-status');
+  var t0 = null;
+  form.addEventListener('submit', function () {
+    btn.disabled = true;
+    btn.innerHTML = '正在出题 <span class="arrow">…</span>';
+    status.textContent = 'AI 正在按所选档案现场出题(约 15~60 秒),请勿关闭页面…';
+    t0 = Date.now();
+    setInterval(function () {
+      status.textContent = 'AI 正在按所选档案现场出题,已等待 ' + Math.round((Date.now() - t0) / 1000) + ' 秒…';
+    }, 1000);
+  });
+})();
+</script>
+
+{% if current_session %}
+<section>
+  <h2 class="h-section">
+    <span>当前会话</span>
+    <span class="h-index mono">#{{ current_session.id }} · {{ current_session.role_tag }}{% if current_session.company %} · {{ current_session.company }}{% endif %}</span>
+  </h2>
+
+  <p class="muted" style="margin-bottom: 16px;">作答后点单题按钮获取三轴点评(落库即完成,无需等待);也可答完后一键提交全部并生成整场综合点评。</p>
+
+  <div style="display: flex; gap: 12px; align-items: center; margin-bottom: 24px;">
+    <button type="button" class="btn" id="btn-submit-all">提交全部并生成综合点评 <span class="arrow">→</span></button>
+    <span class="meta" id="submit-all-status"></span>
+  </div>
+
+  <div id="session-summary" style="display: none; margin-bottom: 32px; padding: 24px; background: var(--bg-2); border: 1px solid var(--rule);">
+    <p class="eyebrow" style="margin-bottom: 12px;">整场综合点评</p>
+    <div id="session-summary-stats" class="meta" style="margin-bottom: 12px;"></div>
+    <div id="session-summary-body" style="white-space: pre-wrap; font-size: 14px; line-height: 1.8;"></div>
+  </div>
+
+  <div id="qa-list" class="stack-6">
+    {% for q in questions %}
+    <article class="qa-card" data-qa-index="{{ loop.index0 }}" data-session-id="{{ current_session.id }}" style="border-top: 1px solid var(--rule); padding-top: 24px;">
+      <div style="display: flex; justify-content: space-between; align-items: baseline; gap: 16px; margin-bottom: 16px;">
+        <div>
+          <span class="tag {% if q.question_source=='WEAKNESS' %}tag-solid{% elif q.question_source=='RESUME' %}tag-warn{% endif %}" style="margin-right: 8px;">{{ q.question_source }}</span>
+          <span class="meta">{{ q.category }} · 难度 {{ q.difficulty }}</span>
+        </div>
+        <span class="meta">题 {{ loop.index }} / {{ questions|length }}</span>
+      </div>
+      <h3 style="font-size: 22px; line-height: 1.4; margin-bottom: 16px;">{{ q.question }}</h3>
+
+      <details style="margin-bottom: 16px;">
+        <summary class="meta" style="cursor: pointer; list-style: none;">查看采分点 ({{ (q.scoring_points or [])|length }} 项)</summary>
+        <ul class="mono" style="margin-top: 12px; padding-left: 20px; color: var(--ink-2); font-size: 13px; line-height: 1.8;">
+          {% for p in q.scoring_points or [] %}<li>{{ p }}</li>{% endfor %}
+        </ul>
+      </details>
+
+      <textarea class="answer" placeholder="你的作答……" style="min-height: 140px;"></textarea>
+
+      <div style="display: flex; gap: 12px; align-items: center; margin-top: 16px;">
+        <button type="button" class="btn submit-btn">提交并获取点评 <span class="arrow">→</span></button>
+        <span class="meta submit-meta">未提交</span>
+      </div>
+
+      <div class="feedback" style="margin-top: 24px; padding: 24px; background: var(--bg-2); border: 1px solid var(--rule-2); min-height: 24px; white-space: pre-wrap; font-family: var(--font-mono); font-size: 13px; line-height: 1.7; display: none;"></div>
+    </article>
+    {% endfor %}
+  </div>
+</section>
+
+<script>
+// 三轴点评格式化渲染(替换模型原始 JSON 流显示)
+function renderScore(score) {
+  const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const axes = [
+    ['tech_correctness', '技术正确性'],
+    ['completeness', '完整性'],
+    ['structure', '表达结构'],
+  ];
+  let html = '<div style="display:flex; gap:12px; flex-wrap:wrap;">';
+  for (const [key, label] of axes) {
+    const a = score[key] || {};
+    const v = typeof a.score === 'number' ? a.score : null;
+    const cmt = esc(a.comment || (v === null ? '未评分' : ''));
+    html += `<div style="flex:1; min-width:150px; border:1px solid var(--rule-2); padding:12px;">`
+      + `<p class="meta">${label}</p>`
+      + `<p style="font-family:var(--font-serif); font-size:26px; margin:4px 0;">${v === null ? '—' : v + '/5'}</p>`
+      + (cmt ? `<p style="font-size:13px; color:var(--ink-3); margin:0;">${cmt}</p>` : '')
+      + `</div>`;
+  }
+  html += '</div>';
+  if (score.overall) {
+    html += `<p style="margin:12px 0 0; font-size:14px;">${esc(score.overall)}</p>`;
+  }
+  return html;
+}
+
+// 单题提交:流式接收三轴点评;done 在落库后立即到达(记忆抽取后台执行,无需等待)
+async function submitOne(card) {
+  const btn = card.querySelector('.submit-btn');
+  const fbBox = card.querySelector('.feedback');
+  const meta = card.querySelector('.submit-meta');
+  const answer = card.querySelector('.answer').value.trim();
+  if (!answer) { meta.textContent = '请先作答'; return { ok: false, skip: true }; }
+  if (meta.textContent.startsWith('已提交')) return { ok: true, skip: true };
+
+  fbBox.style.display = 'block';
+  fbBox.textContent = '生成中…';
+  meta.textContent = '点评生成中';
+  btn.disabled = true;
+  btn.innerHTML = '点评中 <span class="arrow">…</span>';
+  const restore = () => {
+    btn.disabled = false;
+    btn.innerHTML = '重新提交 <span class="arrow">→</span>';
+  };
+  const fd = new FormData();
+  fd.append('session_id', card.dataset.sessionId);
+  fd.append('qa_index', card.dataset.qaIndex);
+  fd.append('answer', answer);
+  try {
+    const resp = await fetch('/api/interview/answer', { method: 'POST', body: fd });
+    // 后端在非流式错误(404 无题目 / 400 越界 / 500 异常)时返回 JSON,显式报错而不是静默
+    const ctype = resp.headers.get('content-type') || '';
+    if (!resp.ok || !ctype.includes('text/event-stream')) {
+      let msg = 'HTTP ' + resp.status;
+      try { const j = await resp.json(); msg = j.error || JSON.stringify(j); } catch (e) {}
+      fbBox.textContent = '点评失败: ' + msg;
+      meta.textContent = '失败';
+      restore();
+      return { ok: false };
+    }
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    fbBox.textContent = '';
+    let gotDone = false;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      // stream:true 避免 UTF-8 多字节被 chunk 边界截断
+      const text = decoder.decode(value, { stream: true });
+      for (const line of text.split('\n')) {
+        if (!line.startsWith('data:')) continue;
+        try {
+          const obj = JSON.parse(line.slice(5).trim());
+          if (obj.chunk) { fbBox.textContent += obj.chunk; }
+          if (obj.error) {
+            fbBox.textContent = obj.error;
+            meta.textContent = '失败';
+            restore();
+            return { ok: false };
+          }
+          if (obj.done) {
+            gotDone = true;
+            meta.textContent = '已提交 · qa_id=' + (obj.qa_id ?? '-');
+            btn.innerHTML = '已提交 <span class="arrow">✓</span>';
+            // 归一化 score 随 done 回传:渲染格式化点评,替代模型的原始 JSON 流
+            if (obj.score && !obj.score.raw) {
+              fbBox.innerHTML = renderScore(obj.score);
+            }
+          }
+        } catch (e) {}
+      }
+    }
+    if (!gotDone) {
+      meta.textContent = '点评结束(未确认入库,可刷新查看)';
+      restore();
+      return { ok: false };
+    }
+    return { ok: true };
+  } catch (e) {
+    fbBox.textContent = '请求失败: ' + (e.message || e);
+    meta.textContent = '失败';
+    restore();
+    return { ok: false };
+  }
+}
+</script>
+<script>
+document.querySelectorAll('.submit-btn').forEach(btn => {
+  // 用 .qa-card 定位题目卡片(按钮本身不再带 data-qa-index,避免 closest 匹配到按钮自身)
+  btn.addEventListener('click', () => submitOne(btn.closest('.qa-card')));
+});
+
+// 一键提交全部 + 整场综合点评
+document.getElementById('btn-submit-all').addEventListener('click', async function () {
+  const status = document.getElementById('submit-all-status');
+  const sessionId = document.querySelector('.qa-card').dataset.sessionId;
+  const cards = Array.from(document.querySelectorAll('.qa-card'));
+  const origHtml = this.innerHTML;
+  this.disabled = true;
+  const setBusy = (msg) => { this.innerHTML = msg + ' <span class="arrow">…</span>'; };
+  try {
+    // 1. 顺序提交所有有作答且未提交的题
+    let submitted = 0;
+    for (let i = 0; i < cards.length; i++) {
+      const card = cards[i];
+      const answer = card.querySelector('.answer').value.trim();
+      const meta = card.querySelector('.submit-meta');
+      if (!answer || meta.textContent.startsWith('已提交')) continue;
+      status.textContent = `正在提交第 ${i + 1} / ${cards.length} 题…`;
+      setBusy(`正在提交第 ${i + 1} 题`);
+      const r = await submitOne(card);
+      if (r.ok && !r.skip) submitted++;
+    }
+    if (!submitted) {
+      // 没有新提交:若全部已提交过,直接生成/刷新综合点评
+      const anyAnswered = cards.some(c => c.querySelector('.answer').value.trim());
+      if (!anyAnswered) { status.textContent = '请先至少作答一题'; return; }
+    }
+    // 2. 生成整场综合点评
+    status.textContent = '正在生成整场综合点评…';
+    setBusy('正在生成综合点评');
+    const resp = await fetch(`/api/interview/${sessionId}/summary`, { method: 'POST' });
+    const j = await resp.json();
+    if (!resp.ok || !j.ok) {
+      status.textContent = '综合点评失败: ' + (j.error || ('HTTP ' + resp.status));
+      return;
+    }
+    const stats = j.stats || {};
+    const avg = stats.avg || {};
+    document.getElementById('session-summary-stats').textContent =
+      `已答 ${stats.answered ?? '-'} 题(已评分 ${stats.scored ?? '-'}) · ` +
+      `技术正确性 ${avg.tech_correctness ?? '—'}/5 · 完整性 ${avg.completeness ?? '—'}/5 · 表达结构 ${avg.structure ?? '—'}/5`;
+    document.getElementById('session-summary-body').textContent = j.summary_md || '';
+    document.getElementById('session-summary').style.display = 'block';
+    document.getElementById('session-summary').scrollIntoView({ behavior: 'smooth' });
+    status.textContent = '完成';
+    this.innerHTML = '已生成综合点评 <span class="arrow">✓</span>';
+  } catch (e) {
+    status.textContent = '请求失败: ' + (e.message || e);
+    this.innerHTML = origHtml;
+  } finally {
+    this.disabled = false;
+  }
+});
+</script>
+{% endif %}
+
+{% if sessions %}
+<section>
+  <h2 class="h-section"><span>历史会话</span><span class="h-index">{{ sessions|length }}</span></h2>
+  <div class="stack-3" style="margin-top: 16px;">
+    {% for s in sessions %}
+    <div style="display: flex; justify-content: space-between; align-items: baseline; gap: 16px; padding: 16px 0; border-bottom: 1px solid var(--rule-2);">
+      <a href="/interview/{{ s.id }}" style="display: flex; justify-content: space-between; align-items: baseline; gap: 16px; flex: 1; min-width: 0;">
+        <div>
+          <span class="mono">#{{ s.id }}</span>
+          <span style="margin-left: 16px;">{{ s.role_tag }}{% if s.company %} · {{ s.company }}{% endif %}</span>
+        </div>
+        <span class="meta">{{ s.created_at }}</span>
+      </a>
+      <form method="post" action="/interview/{{ s.id }}/delete" onsubmit="return confirm('确认删除会话 #{{ s.id }}?该会话的作答记录将一并删除。');">
+        <button type="submit" class="btn btn-ghost btn-sm">删除</button>
+      </form>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+{% endblock %}

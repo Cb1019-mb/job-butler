@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block title %}求职管家 — 会长期记住你的 AI 求职伙伴{% endblock %}
+{% block body %}
+
+<section class="stack-6" style="padding: 96px 0 64px;">
+  <div>
+    <p class="eyebrow" style="margin-bottom: 24px;">一个会遗忘的面试陪练</p>
+    <h1 class="display" style="margin-bottom: 32px;">记你答砸的题,<br>按遗忘曲线淡出,<br><em>每周生成成长报告。</em></h1>
+    <p class="lede">
+      求职管家不是聊天记录。它是一套会合并、会衰减、能被验证的认知记忆——
+      你每次模拟面试暴露的弱点会被抽取,下一次自动针对弱点出题,旧知识点按半衰期自然淡出。
+    </p>
+  </div>
+
+  <div style="display: flex; gap: 16px; flex-wrap: wrap;">
+    <a class="btn" href="/profile">开始建立档案 <span class="arrow">→</span></a>
+    <a class="btn btn-ghost" href="/interview">直接进入面试</a>
+  </div>
+</section>
+
+<section>
+  <h2 class="h-section"><span>使用流程</span><span class="h-index">01 / 04</span></h2>
+  <div class="grid-3" style="margin-top: 16px;">
+    <div class="stack-2">
+      <p class="meta">01</p>
+      <h3 style="font-size: 22px;">导入简历与 JD</h3>
+      <p class="muted">AI 抽取你的技能、项目、疑似短板,作为后续深挖和岗位匹配的素材。</p>
+      <p><a href="/profile">能力档案 →</a></p>
+    </div>
+    <div class="stack-2">
+      <p class="meta">02</p>
+      <h3 style="font-size: 22px;">每场 5 题模拟面试</h3>
+      <p class="muted">2 道弱点再训练 + 2 道简历深挖 + 1 道岗位新知,三轴流式点评。</p>
+      <p><a href="/interview">发起面试 →</a></p>
+    </div>
+    <div class="stack-2">
+      <p class="meta">03</p>
+      <h3 style="font-size: 22px;">记忆沉淀与衰减</h3>
+      <p class="muted">答错的知识点进入弱点库,30 天无强化自动降权,可手动标记无效。</p>
+      <p><a href="/timeline">查看时间线 →</a></p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2 class="h-section"><span>差异化</span><span class="h-index">why</span></h2>
+  <div class="grid-2" style="margin-top: 16px;">
+    <div class="stack-3">
+      <p class="eyebrow">不是聊天</p>
+      <h3 style="font-size: 22px;">结构化、可验证</h3>
+      <p class="muted">三轴 rubric 固定进 prompt,点评必须引用题库采分点,JSON Schema 强约束。不打 LLM 自由总分。</p>
+    </div>
+    <div class="stack-3">
+      <p class="eyebrow">不是死记</p>
+      <h3 style="font-size: 22px;">会合并、会遗忘</h3>
+      <p class="muted">相似度 &gt; 0.85 自动合并;按半衰期读时衰减;用户负反馈永久排除;单场最多沉淀 6 条,防止垃圾化。</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2 class="h-section"><span>配置</span><span class="h-index">settings</span></h2>
+  <div class="grid-3" style="margin-top: 16px;">
+    <a href="/settings" style="display: block; padding: 24px 0; border-top: 1px solid var(--rule);">
+      <p class="eyebrow" style="margin-bottom: 12px;">模型</p>
+      <h3 style="font-size: 18px; margin-bottom: 8px;">LLM / Embedding</h3>
+      <p class="muted">切换 vLLM / DeepSeek / 自定义 OpenAI 兼容服务,实时生效。</p>
+    </a>
+    <a href="/settings" style="display: block; padding: 24px 0; border-top: 1px solid var(--rule);">
+      <p class="eyebrow" style="margin-bottom: 12px;">出题 / 记忆</p>
+      <h3 style="font-size: 18px; margin-bottom: 8px;">行为参数</h3>
+      <p class="muted">题数、配比、合并阈值、半衰期,所有可调旋钮集中在一处。</p>
+    </a>
+    <a href="/settings" style="display: block; padding: 24px 0; border-top: 1px solid var(--rule);">
+      <p class="eyebrow" style="margin-bottom: 12px;">画面</p>
+      <h3 style="font-size: 18px; margin-bottom: 8px;">主题 / 字号 / 密度</h3>
+      <p class="muted">四套主题实时切换,字号与密度仅本地存储。</p>
+    </a>
+  </div>
+</section>
+
+{% endblock %}

@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+{% block title %}记忆时间线 — 求职管家{% endblock %}
+{% block body %}
+
+<section style="padding: 64px 0 16px;">
+  <p class="eyebrow" style="margin-bottom: 16px;">Step 03 / 记忆</p>
+  <h1 class="display" style="font-size: 48px; margin-bottom: 24px;">记忆时间线</h1>
+  <p class="lede">每条记忆的来源、强度、状态(ACTIVE / MASTERED / IDLE / DISABLED)都可在此追溯,手动标记无效进负反馈池。</p>
+</section>
+
+<!-- 状态计数 -->
+<section>
+  <div class="grid-4" style="margin-top: 16px;">
+    <div style="border-top: 1px solid var(--rule); padding-top: 16px;">
+      <p class="eyebrow">ACTIVE</p>
+      <p style="font-family: var(--font-serif); font-size: 36px; line-height: 1.1; margin-top: 8px;">{{ counts.ACTIVE }}</p>
+    </div>
+    <div style="border-top: 1px solid var(--rule); padding-top: 16px;">
+      <p class="eyebrow">MASTERED</p>
+      <p style="font-family: var(--font-serif); font-size: 36px; line-height: 1.1; margin-top: 8px;">{{ counts.MASTERED }}</p>
+    </div>
+    <div style="border-top: 1px solid var(--rule); padding-top: 16px;">
+      <p class="eyebrow">IDLE</p>
+      <p style="font-family: var(--font-serif); font-size: 36px; line-height: 1.1; margin-top: 8px;">{{ counts.IDLE }}</p>
+    </div>
+    <div style="border-top: 1px solid var(--rule); padding-top: 16px;">
+      <p class="eyebrow">DISABLED</p>
+      <p style="font-family: var(--font-serif); font-size: 36px; line-height: 1.1; margin-top: 8px;">{{ counts.DISABLED }}</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2 class="h-section"><span>全部记忆</span><span class="h-index">{{ memories|length }}</span></h2>
+
+  {% if not memories %}
+  <p class="muted" style="margin-top: 32px;">还没有记忆。去 <a href="/interview">模拟面试</a> 答几道题,系统会自动从答错/漏点里抽取弱点入库。</p>
+  {% else %}
+  <div class="stack-6" style="margin-top: 16px;">
+    {% for m in memories %}
+    <article class="memory-card" data-id="{{ m.id }}" style="border-top: 1px solid var(--rule); padding-top: 20px;">
+      <div style="display: flex; justify-content: space-between; align-items: baseline; gap: 16px; margin-bottom: 12px;">
+        <div style="display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap;">
+          <span class="tag
+            {% if m.status == 'ACTIVE' %}tag-solid
+            {% elif m.status == 'MASTERED' %}tag-warn
+            {% else %}tag-mute{% endif %}">
+            {{ m.status }}
+          </span>
+          <span class="meta">#{{ m.id }} · {{ m.type }}</span>
+          <span class="meta">{{ m.created_at }}</span>
+          {% if m.source_qa_id %}
+            <span class="meta">· 来自 qa #{{ m.source_qa_id }}</span>
+          {% endif %}
+        </div>
+        <span class="meta">strength {{ "%.2f"|format(m.effective) }}</span>
+      </div>
+
+      <p style="font-size: 16px; line-height: 1.6; margin-bottom: 12px;">{{ m.content }}</p>
+
+      <!-- 强度条:基于 effective 强度可视化(0~3 归一化到 0~100%) -->
+      {% set pct = [ [m.effective / 3.0 * 100, 100] | min, 0 ] | max %}
+      <div style="height: 4px; background: var(--rule-2); position: relative; margin-bottom: 8px;">
+        <div style="position: absolute; top: 0; left: 0; bottom: 0; width: {{ pct }}%; background: var(--ink);"></div>
+      </div>
+      <p class="meta" style="margin-bottom: 16px;">
+        强化 {{ m.reinforce_count }} 次 · 半衰期 {{ "%.0f"|format(m.half_life_days) }} 天
+      </p>
+
+      {% if m.status != 'DISABLED' %}
+      <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+        {% if m.source_qa_id and m.session_id %}
+          <a href="/interview/{{ m.session_id }}" class="btn btn-ghost btn-sm">查看原题 →</a>
+        {% endif %}
+        {% if m.status != 'MASTERED' %}
+          <button type="button" class="btn btn-ghost btn-sm act-mark-mastered" data-id="{{ m.id }}">标记已掌握</button>
+        {% endif %}
+        {% if m.status == 'IDLE' or m.status == 'MASTERED' %}
+          <button type="button" class="btn btn-ghost btn-sm act-mark-active" data-id="{{ m.id }}">恢复 ACTIVE</button>
+        {% endif %}
+        <button type="button" class="btn btn-ghost btn-sm act-mark-invalid" data-id="{{ m.id }}">标记无效</button>
+      </div>
+      {% else %}
+      <p class="meta">已标记无效,出题永久排除</p>
+      {% endif %}
+    </article>
+    {% endfor %}
+  </div>
+  {% endif %}
+</section>
+
+<script>
+function _markAction(btn, url) {
+  var id = btn.dataset.id;
+  fetch(url, { method: 'POST' })
+    .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+    .then(function (out) {
+      if (out.ok) { location.reload(); }
+      else { alert('操作失败: ' + (out.j.error || '未知')); btn.disabled = false; }
+    })
+    .catch(function (e) { alert('请求失败: ' + e.message); btn.disabled = false; });
+}
+document.querySelectorAll('.act-mark-invalid').forEach(function (btn) {
+  btn.addEventListener('click', function () {
+    if (!confirm('确认标记为无效?后续出题将永久排除此记忆。')) return;
+    btn.disabled = true;
+    _markAction(btn, '/api/memory/' + btn.dataset.id + '/mark_invalid');
+  });
+});
+document.querySelectorAll('.act-mark-mastered').forEach(function (btn) {
+  btn.addEventListener('click', function () {
+    btn.disabled = true;
+    _markAction(btn, '/api/memory/' + btn.dataset.id + '/mark_mastered');
+  });
+});
+document.querySelectorAll('.act-mark-active').forEach(function (btn) {
+  btn.addEventListener('click', function () {
+    btn.disabled = true;
+    _markAction(btn, '/api/memory/' + btn.dataset.id + '/mark_active');
+  });
+});
+</script>
+
+{% endblock %}

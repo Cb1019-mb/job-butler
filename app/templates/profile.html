@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+{% block title %}能力档案 — 求职管家{% endblock %}
+{% block body %}
+
+<section style="padding: 64px 0 16px;">
+  <p class="eyebrow" style="margin-bottom: 16px;">Step 01 / 导入</p>
+  <h1 class="display" style="font-size: 48px; margin-bottom: 24px;">能力档案</h1>
+  <p class="lede">粘贴简历原文和目标 JD,AI 抽取结构化能力档案:技能、项目、疑似短板、JD 重点。每次生成会保存为一条档案历史,模拟面试可任选其一出题。</p>
+</section>
+
+<section>
+  <h2 class="h-section"><span>新建档案</span><span class="h-index">input</span></h2>
+
+  <form method="post" action="/api/profile/parse" id="form-profile-parse" class="stack-4" style="margin-top: 16px;">
+    <div>
+      <label>档案名称(可选,便于在历史中识别)</label>
+      <input type="text" name="name" placeholder="如:后端-字节2026秋招" style="max-width: 480px;" />
+    </div>
+    <div class="grid-2">
+      <div>
+        <label>简历原文</label>
+        <textarea name="resume" id="resume-text" placeholder="把你的简历贴在这里……">{{ profile.resume_text if profile else '' }}</textarea>
+      </div>
+      <div>
+        <label>目标 JD</label>
+        <textarea name="jd" id="jd-text" placeholder="把目标岗位的 JD 贴在这里……">{{ profile.target_jd if profile else '' }}</textarea>
+      </div>
+    </div>
+    <div style="display: flex; gap: 16px; align-items: center;">
+      <button type="submit" class="btn" id="btn-profile-parse">生成能力档案 <span class="arrow">→</span></button>
+      <span class="meta" id="profile-parse-status">每次生成都会保存为一条新的档案历史</span>
+    </div>
+  </form>
+</section>
+
+<script>
+// 生成档案:提交后立即给等候提示(LLM 抽取约 10~30 秒)
+(function () {
+  var form = document.getElementById('form-profile-parse');
+  if (!form) return;
+  var btn = document.getElementById('btn-profile-parse');
+  var status = document.getElementById('profile-parse-status');
+  var t0 = null;
+  form.addEventListener('submit', function () {
+    btn.disabled = true;
+    btn.innerHTML = '正在生成 <span class="arrow">…</span>';
+    t0 = Date.now();
+    status.textContent = 'AI 正在解析简历与 JD,约 10~30 秒,请勿关闭页面…';
+    setInterval(function () {
+      status.textContent = 'AI 正在解析简历与 JD,已等待 ' + Math.round((Date.now() - t0) / 1000) + ' 秒…';
+    }, 1000);
+  });
+})();
+</script>
+
+{% if profile and profile.parsed_skills %}
+<section>
+  <h2 class="h-section"><span>{% if profile.name %}{{ profile.name }}{% else %}当前档案{% endif %}</span><span class="h-index mono">#{{ profile.id }}</span></h2>
+
+  <div class="grid-2" style="margin-top: 16px;">
+    <div>
+      <p class="eyebrow" style="margin-bottom: 16px;">技能</p>
+      <div class="tags">
+        {% for s in profile.parsed_skills.skills or [] %}<span class="tag">{{ s }}</span>{% endfor %}
+        {% if not (profile.parsed_skills.skills or []) %}<span class="muted">—</span>{% endif %}
+      </div>
+    </div>
+    <div>
+      <p class="eyebrow" style="margin-bottom: 16px;">JD 重点</p>
+      <div class="tags">
+        {% for s in profile.parsed_skills.jd_focus or [] %}<span class="tag tag-solid">{{ s }}</span>{% endfor %}
+        {% if not (profile.parsed_skills.jd_focus or []) %}<span class="muted">—</span>{% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div style="margin-top: 48px;">
+    <p class="eyebrow" style="margin-bottom: 16px;">疑似短板</p>
+    <div class="tags">
+      {% for s in profile.parsed_skills.weak_signals or [] %}<span class="tag tag-warn">{{ s }}</span>{% endfor %}
+      {% if not (profile.parsed_skills.weak_signals or []) %}<span class="muted">未识别到明显短板</span>{% endif %}
+    </div>
+  </div>
+
+  {% if profile.parsed_skills.projects %}
+  <div style="margin-top: 64px;">
+    <p class="eyebrow" style="margin-bottom: 24px;">项目</p>
+    <div class="stack-6">
+      {% for p in profile.parsed_skills.projects %}
+      <article style="border-top: 1px solid var(--rule); padding-top: 24px;">
+        <div style="display: flex; justify-content: space-between; align-items: baseline; gap: 16px; margin-bottom: 12px;">
+          <h3 style="font-size: 20px;">{{ loop.index }}. {{ p.name }}</h3>
+          <span class="meta">#{{ loop.index }}</span>
+        </div>
+        <p class="muted" style="margin-bottom: 16px;">{{ p.summary }}</p>
+        <div class="tags">
+          {% for t in p.tech or [] %}<span class="tag tag-mute">{{ t }}</span>{% endfor %}
+        </div>
+      </article>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  <details style="margin-top: 64px;">
+    <summary class="eyebrow" style="cursor: pointer; list-style: none;">查看原始 JSON</summary>
+    <pre style="margin-top: 16px; padding: 24px; background: var(--bg-2); border: 1px solid var(--rule-2); font-family: var(--font-mono); font-size: 12px; line-height: 1.7; overflow-x: auto;">{{ profile.parsed_skills | tojson(indent=2) }}</pre>
+  </details>
+</section>
+{% endif %}
+
+{% if profiles %}
+<section>
+  <h2 class="h-section"><span>档案历史</span><span class="h-index">{{ profiles|length }}</span></h2>
+  <div class="stack-3" style="margin-top: 16px;">
+    {% for pr in profiles %}
+    <div style="display: flex; justify-content: space-between; align-items: baseline; gap: 16px; padding: 16px 0; border-bottom: 1px solid var(--rule-2);">
+      <div style="min-width: 0;">
+        <a href="/profile/{{ pr.id }}" style="font-size: 16px;">
+          <span class="mono">#{{ pr.id }}</span> {{ pr.name }}
+        </a>
+        <p class="meta" style="margin-top: 4px;">{{ pr.created_at }} · {{ pr.skill_count }} 项技能 · {{ pr.project_count }} 个项目</p>
+        {% if pr.target_jd %}<p class="meta" style="margin-top: 2px; color: var(--ink-3);">JD: {{ pr.target_jd }}…</p>{% endif %}
+      </div>
+      <form method="post" action="/profile/{{ pr.id }}/delete" onsubmit="return confirm('确认删除档案「{{ pr.name }}」?关联会话会解除绑定。');">
+        <button type="submit" class="btn btn-ghost btn-sm">删除</button>
+      </form>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+{% endblock %}

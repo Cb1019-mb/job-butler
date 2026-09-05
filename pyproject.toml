@@ -1,0 +1,22 @@
+[project]
+name = "job-butler"
+version = "0.1.0"
+description = "求职管家 - 带认知记忆引擎的 AI 面试陪练"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.27",
+    "jinja2>=3.1",
+    "openai>=1.30",
+    "sentence-transformers>=2.7",
+    "sqlite-vec>=0.1.3",
+    "apscheduler>=3.10",
+    "pydantic>=2.6",
+    "httpx>=0.27",
+    "python-multipart>=0.0.9",
+    "mcp>=1.0",
+]
+
+[tool.uv]
+package = false

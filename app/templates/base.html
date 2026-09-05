@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="warm" data-size="m" data-density="cozy">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}求职管家{% endblock %}</title>
+  <script>
+    // 在样式加载前应用 localStorage 主题,避免闪烁
+    // 旧值迁移:已舍弃的 light/dark 主题回落到 warm
+    (function () {
+      try {
+        var t = localStorage.getItem('jb.theme') || 'warm';
+        if (t === 'light' || t === 'dark') { t = 'warm'; localStorage.setItem('jb.theme', t); }
+        var s = localStorage.getItem('jb.size')  || 'm';
+        var d = localStorage.getItem('jb.density') || 'cozy';
+        document.documentElement.setAttribute('data-theme', t);
+        document.documentElement.setAttribute('data-size', s);
+        document.documentElement.setAttribute('data-density', d);
+      } catch (e) {}
+    })();
+  </script>
+  <style>
+    /* ---------- Theme tokens(仅保留 ink / warm) ---------- */
+    :root,
+    [data-theme="warm"] {
+      --ink:        #1a1612;
+      --ink-2:      #2a2218;
+      --ink-3:      #6b5d4d;
+      --ink-4:      #a89881;
+      --rule:       #1a1612;
+      --rule-2:     #e8e0d2;
+      --bg:         #faf6ee;
+      --bg-2:       #f4ede0;
+      --bg-3:       #ebe3d2;
+      --inverse-ink:#faf6ee;
+      --inverse-bg: #1a1612;
+    }
+    [data-theme="ink"] {
+      --ink:        #ffffff;
+      --ink-2:      #f0f0f0;
+      --ink-3:      #b0b0b0;
+      --ink-4:      #707070;
+      --rule:       #ffffff;
+      --rule-2:     #2a2a2a;
+      --bg:         #000000;
+      --bg-2:       #0a0a0a;
+      --bg-3:       #141414;
+      --inverse-ink:#000000;
+      --inverse-bg: #ffffff;
+    }
+
+    /* ---------- Size & density ---------- */
+    [data-size="m"] { --fs-base: 15px; --fs-display: 64px; }
+    [data-size="l"] { --fs-base: 17px; --fs-display: 76px; }
+    [data-density="cozy"] { --space-section: 64px; --space-card: 24px; }
+    [data-density="compact"] { --space-section: 32px; --space-card: 14px; }
+
+    :root {
+      --font-sans:  "Inter", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+      --font-serif: "Source Han Serif SC", "Noto Serif SC", "Songti SC", "STSong", "Georgia", serif;
+      --font-mono:  "JetBrains Mono", "SF Mono", "Menlo", "Consolas", monospace;
+
+      --w-page:     1180px;
+      --gutter:     32px;
+      --col-gap:    48px;
+    }
+
+    /* ---------- Reset ---------- */
+    *, *::before, *::after { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; }
+    body {
+      font-family: var(--font-sans);
+      font-size: var(--fs-base);
+      color: var(--ink);
+      background: var(--bg);
+      line-height: 1.55;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      font-feature-settings: "ss01", "cv11";
+      transition: background 200ms ease, color 200ms ease;
+    }
+    a { color: inherit; text-decoration: none; }
+    a:hover { text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1px; }
+    button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+    input, textarea, select { font: inherit; color: inherit; }
+    h1, h2, h3, h4, h5, h6 { font-weight: 500; margin: 0; letter-spacing: -0.01em; }
+
+    /* ---------- Page frame ---------- */
+    .frame { max-width: var(--w-page); margin: 0 auto; padding: 0 var(--gutter); }
+    .topbar {
+      border-bottom: 1px solid var(--rule);
+      padding: 28px 0 20px;
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 32px;
+    }
+    .brand { display: flex; align-items: baseline; gap: 16px; }
+    .back-btn {
+      font-family: var(--font-mono);
+      font-size: 13px;
+      color: var(--ink-3);
+      border: 1px solid var(--rule-2);
+      padding: 5px 12px;
+      transition: color 120ms ease, border-color 120ms ease;
+    }
+    .back-btn:hover { color: var(--ink); border-color: var(--ink); text-decoration: none; }
+    .brand-mark {
+      font-family: var(--font-serif);
+      font-size: 26px;
+      letter-spacing: -0.02em;
+      color: var(--ink);
+    }
+    .brand-mark em { font-style: normal; color: var(--ink-4); font-size: 13px; letter-spacing: 0.04em; margin-left: 4px; }
+    .nav { display: flex; gap: 28px; align-items: baseline; flex-wrap: wrap; }
+    .nav a {
+      font-size: 14px;
+      color: var(--ink-3);
+      padding: 4px 0;
+      border-bottom: 1px solid transparent;
+      transition: color 120ms ease, border-color 120ms ease;
+    }
+    .nav a:hover { color: var(--ink); text-decoration: none; border-bottom-color: var(--rule-2); }
+    .nav a.active { color: var(--ink); border-bottom-color: var(--ink); }
+    .footer {
+      border-top: 1px solid var(--rule-2);
+      margin-top: 96px;
+      padding: 24px 0 48px;
+      display: flex;
+      justify-content: space-between;
+      font-size: 12px;
+      color: var(--ink-4);
+      letter-spacing: 0.04em;
+    }
+
+    /* ---------- Typography helpers ---------- */
+    .eyebrow {
+      font-size: 11px;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--ink-4);
+      font-weight: 500;
+    }
+    .display {
+      font-family: var(--font-serif);
+      font-size: var(--fs-display);
+      line-height: 1.05;
+      letter-spacing: -0.03em;
+      color: var(--ink);
+    }
+    .display em { font-style: italic; color: var(--ink-3); }
+    .lede { font-size: 18px; line-height: 1.6; color: var(--ink-3); max-width: 640px; }
+    .h-section {
+      font-size: 13px;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: var(--ink-4);
+      font-weight: 500;
+      border-top: 1px solid var(--rule);
+      padding-top: 24px;
+      margin-top: var(--space-section);
+      margin-bottom: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .h-section:first-of-type { margin-top: 48px; }
+    .h-section .h-index { font-family: var(--font-mono); color: var(--ink-4); }
+
+    /* ---------- Form ---------- */
+    label, .label {
+      display: block;
+      font-size: 12px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--ink-4);
+      margin-bottom: 12px;
+      font-weight: 500;
+    }
+    textarea, input[type=text], input[type=email], input[type=number], input[type=password], select {
+      width: 100%;
+      padding: 14px 16px;
+      background: var(--bg);
+      border: 1px solid var(--rule-2);
+      border-radius: 0;
+      font-size: var(--fs-base);
+      line-height: 1.6;
+      color: var(--ink);
+      transition: border-color 120ms ease;
+      outline: none;
+      font-family: var(--font-sans);
+    }
+    textarea { min-height: 220px; resize: vertical; }
+    textarea:focus, input:focus, select:focus { border-color: var(--ink); }
+    textarea::placeholder, input::placeholder { color: var(--ink-4); }
+    select { appearance: none; padding-right: 36px; background-image: linear-gradient(45deg, transparent 50%, var(--ink-3) 50%), linear-gradient(135deg, var(--ink-3) 50%, transparent 50%); background-position: calc(100% - 18px) 50%, calc(100% - 12px) 50%; background-size: 6px 6px; background-repeat: no-repeat; }
+
+    /* ---------- Buttons ---------- */
+    .btn {
+      display: inline-flex; align-items: center; gap: 10px;
+      padding: 12px 22px;
+      font-size: 14px;
+      letter-spacing: 0.02em;
+      background: var(--ink);
+      color: var(--inverse-ink);
+      border: 1px solid var(--ink);
+      transition: background 120ms ease, color 120ms ease;
+      cursor: pointer;
+    }
+    .btn:hover { background: var(--bg); color: var(--ink); }
+    .btn:disabled { background: var(--bg-3); color: var(--ink-4); border-color: var(--rule-2); cursor: not-allowed; }
+    .btn .arrow { font-family: var(--font-mono); }
+    .btn-ghost { background: transparent; color: var(--ink); border: 1px solid var(--rule-2); }
+    .btn-ghost:hover { background: var(--ink); color: var(--inverse-ink); border-color: var(--ink); }
+    .btn-sm { padding: 6px 12px; font-size: 12px; }
+
+    /* ---------- Tags ---------- */
+    .tags { display: flex; flex-wrap: wrap; gap: 8px; }
+    .tag { display: inline-block; padding: 5px 10px; font-size: 12px; border: 1px solid var(--rule-2); color: var(--ink-2); background: var(--bg); letter-spacing: 0.02em; }
+    .tag-solid { background: var(--ink); color: var(--inverse-ink); border-color: var(--ink); }
+    .tag-mute  { color: var(--ink-3); }
+    .tag-warn  { border-color: var(--ink); color: var(--ink); }
+
+    /* ---------- Meta ---------- */
+    .meta { font-family: var(--font-mono); font-size: 12px; color: var(--ink-4); letter-spacing: 0.02em; }
+    .muted { color: var(--ink-4); }
+    .ink-2 { color: var(--ink-2); }
+    .mono { font-family: var(--font-mono); }
+
+    /* ---------- Grid utilities ---------- */
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: var(--col-gap); }
+    .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--col-gap); }
+    .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--col-gap); }
+    .grid-5 { display: grid; grid-template-columns: repeat(5, 1fr); gap: var(--col-gap); }
+    .stack-2 > * + * { margin-top: 16px; }
+    .stack-3 > * + * { margin-top: 24px; }
+    .stack-4 > * + * { margin-top: 32px; }
+    .stack-6 > * + * { margin-top: 48px; }
+
+    @media (max-width: 880px) {
+      .grid-2, .grid-3, .grid-4, .grid-5 { grid-template-columns: 1fr; gap: 24px; }
+      .display { font-size: 40px; }
+      .topbar { flex-direction: column; align-items: flex-start; gap: 16px; }
+      .nav { gap: 16px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="frame">
+    <header class="topbar">
+      <div class="brand">
+        <a href="javascript:history.back()" class="back-btn" title="返回上一页" aria-label="返回">← 返回</a>
+        <a href="/" class="brand-mark">求职管家<em>Job Butler</em></a>
+      </div>
+      <nav class="nav" aria-label="主导航">
+        <a href="/"           class="{% if active is not defined or active=='index' %}active{% endif %}">首页</a>
+        <a href="/profile"    class="{% if active=='profile'   %}active{% endif %}">能力档案</a>
+        <a href="/interview"  class="{% if active=='interview' %}active{% endif %}">模拟面试</a>
+        <a href="/timeline"   class="{% if active=='timeline'  %}active{% endif %}">记忆时间线</a>
+        <a href="/kanban"     class="{% if active=='kanban'    %}active{% endif %}">看板 + 周报</a>
+        <a href="/settings"   class="{% if active=='settings'  %}active{% endif %}">设置</a>
+      </nav>
+    </header>
+
+    <main>
+      {% block body %}{% endblock %}
+    </main>
+
+    <footer class="footer">
+      <div>求职管家 · Job Butler</div>
+      <div>v0.1</div>
+    </footer>
+  </div>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block title %}会话 #{{ session.id }} — 求职管家{% endblock %}
+{% block body %}
+
+<section style="padding: 64px 0 16px;">
+  <p class="eyebrow" style="margin-bottom: 16px;">历史会话 · <a href="/interview" style="text-decoration: underline;">返回面试</a></p>
+  <h1 class="display" style="font-size: 40px; margin-bottom: 16px;">{{ session.role_tag }}{% if session.company %} · {{ session.company }}{% endif %}</h1>
+  <p class="meta">会话 #{{ session.id }} · 模式 {{ session.mode }} · {{ session.created_at }}</p>
+</section>
+
+<section>
+  <h2 class="h-section"><span>本场题目与点评</span><span class="h-index">{{ qa_rows|length }}</span></h2>
+
+  {% if session.summary_md %}
+  <div style="margin: 24px 0; padding: 24px; background: var(--bg-2); border: 1px solid var(--rule);">
+    <p class="eyebrow" style="margin-bottom: 12px;">整场综合点评</p>
+    <div style="white-space: pre-wrap; font-size: 14px; line-height: 1.8;">{{ session.summary_md }}</div>
+  </div>
+  {% endif %}
+
+  {% if not qa_rows %}
+  <p class="muted" style="margin-top: 24px;">这场还没有作答记录。</p>
+  {% else %}
+  <div class="stack-6" style="margin-top: 16px;">
+    {% for qa in qa_rows %}
+    <article style="border-top: 1px solid var(--rule); padding-top: 20px;">
+      <div style="display: flex; justify-content: space-between; align-items: baseline; gap: 16px; margin-bottom: 12px;">
+        <div style="display: flex; align-items: baseline; gap: 12px;">
+          <span class="tag
+            {% if qa.question_source == 'WEAKNESS' %}tag-solid
+            {% elif qa.question_source == 'RESUME' %}tag-warn
+            {% else %}tag-mute{% endif %}">
+            {{ qa.question_source }}
+          </span>
+          <span class="meta">题 #{{ loop.index }} · qa_id #{{ qa.id }}</span>
+          {% if qa.extracted_at %}<span class="meta">已抽记忆 {{ qa.extracted_at }}</span>{% else %}<span class="meta">未抽记忆</span>{% endif %}
+        </div>
+      </div>
+
+      <h3 style="font-size: 18px; line-height: 1.4; margin-bottom: 12px;">{{ qa.question }}</h3>
+
+      {% if qa.answer %}
+      <p class="eyebrow" style="margin-top: 16px;">你的作答</p>
+      <p style="white-space: pre-wrap; font-size: 14px; line-height: 1.6; padding: 12px; background: var(--bg-2); border: 1px solid var(--rule-2);">{{ qa.answer }}</p>
+      {% endif %}
+
+      {% if qa.reference_answer %}
+      <details style="margin-top: 12px;">
+        <summary class="meta" style="cursor: pointer; list-style: none;">参考答案</summary>
+        <p style="white-space: pre-wrap; font-size: 14px; line-height: 1.6; padding: 12px; background: var(--bg-2); border: 1px solid var(--rule-2); margin-top: 8px;">{{ qa.reference_answer }}</p>
+      </details>
+      {% endif %}
+
+      {% if qa.score and (qa.score.tech_correctness or qa.score.completeness or qa.score.structure) %}
+      <p class="eyebrow" style="margin-top: 16px;">三轴点评</p>
+      <div class="grid-3" style="margin-top: 8px;">
+        <div style="border: 1px solid var(--rule-2); padding: 12px;">
+          <p class="meta">技术正确性</p>
+          <p style="font-family: var(--font-serif); font-size: 28px; line-height: 1.1; margin: 6px 0;">{{ qa.score.tech_correctness.score }}/5</p>
+          <p style="font-size: 13px; color: var(--ink-3);">{{ qa.score.tech_correctness.comment }}</p>
+        </div>
+        <div style="border: 1px solid var(--rule-2); padding: 12px;">
+          <p class="meta">完整性</p>
+          <p style="font-family: var(--font-serif); font-size: 28px; line-height: 1.1; margin: 6px 0;">{{ qa.score.completeness.score }}/5</p>
+          <p style="font-size: 13px; color: var(--ink-3);">{{ qa.score.completeness.comment }}</p>
+        </div>
+        <div style="border: 1px solid var(--rule-2); padding: 12px;">
+          <p class="meta">表达结构</p>
+          <p style="font-family: var(--font-serif); font-size: 28px; line-height: 1.1; margin: 6px 0;">{{ qa.score.structure.score }}/5</p>
+          <p style="font-size: 13px; color: var(--ink-3);">{{ qa.score.structure.comment }}</p>
+        </div>
+      </div>
+      {% endif %}
+    </article>
+    {% endfor %}
+  </div>
+  {% endif %}
+</section>
+
+{% endblock %}

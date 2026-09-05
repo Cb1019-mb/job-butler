@@ -1,0 +1,392 @@
+{% extends "base.html" %}
+{% block title %}设置 — 求职管家{% endblock %}
+{% block body %}
+
+<section style="padding: 64px 0 16px;">
+  <p class="eyebrow" style="margin-bottom: 16px;">Settings</p>
+  <h1 class="display" style="font-size: 48px; margin-bottom: 24px;">设置</h1>
+  <p class="lede">模型、出题、记忆阈值三类参数持久化到 SQLite,改动后下一次请求生效;画面主题仅在浏览器本地切换。</p>
+</section>
+
+<div id="toast" style="position: fixed; top: 24px; right: 24px; padding: 12px 20px; background: var(--ink); color: var(--inverse-ink); font-size: 13px; opacity: 0; pointer-events: none; transition: opacity 180ms ease; z-index: 1000; font-family: var(--font-mono);"></div>
+
+<!-- ============== 1. 画面(本地,实时) ============== -->
+<section>
+  <h2 class="h-section"><span>画面</span><span class="h-index">local · instant</span></h2>
+  <div class="grid-4" style="margin-top: 16px;">
+    <div>
+      <p class="eyebrow" style="margin-bottom: 12px;">主题</p>
+      <div class="stack-2" id="theme-grid">
+        <button type="button" class="theme-card" data-theme="warm"
+                style="cursor: pointer; border: 1px solid var(--rule-2); padding: 16px; text-align: left; background: #faf6ee; color: #1a1612;">
+          <div style="display: flex; justify-content: space-between; align-items: baseline;"><span style="font-size: 13px; font-weight: 500;">暖白</span><span class="meta" style="color: #a89881;">warm</span></div>
+          <div style="margin-top: 12px; height: 24px; background: #ebe3d2;"></div>
+        </button>
+        <button type="button" class="theme-card" data-theme="ink"
+                style="cursor: pointer; border: 1px solid var(--rule-2); padding: 16px; text-align: left; background: #000000; color: #ffffff;">
+          <div style="display: flex; justify-content: space-between; align-items: baseline;"><span style="font-size: 13px; font-weight: 500;">纯黑</span><span class="meta" style="color: #707070;">ink</span></div>
+          <div style="margin-top: 12px; height: 24px; background: #141414;"></div>
+        </button>
+      </div>
+    </div>
+
+    <div>
+      <p class="eyebrow" style="margin-bottom: 12px;">字号</p>
+      <div class="stack-2" id="size-grid">
+        <button type="button" data-size="m" class="opt-btn" style="padding: 12px 16px; border: 1px solid var(--rule-2); text-align: left; font-size: 15px;">中 <span class="meta" style="float:right;">m</span></button>
+        <button type="button" data-size="l" class="opt-btn" style="padding: 12px 16px; border: 1px solid var(--rule-2); text-align: left; font-size: 17px;">大 <span class="meta" style="float:right;">l</span></button>
+      </div>
+    </div>
+
+    <div>
+      <p class="eyebrow" style="margin-bottom: 12px;">密度</p>
+      <div class="stack-2" id="density-grid">
+        <button type="button" data-density="cozy" class="opt-btn" style="padding: 12px 16px; border: 1px solid var(--rule-2); text-align: left;">舒适 <span class="meta" style="float:right;">cozy</span></button>
+        <button type="button" data-density="compact" class="opt-btn" style="padding: 12px 16px; border: 1px solid var(--rule-2); text-align: left;">紧凑 <span class="meta" style="float:right;">compact</span></button>
+      </div>
+    </div>
+
+    <div>
+      <p class="eyebrow" style="margin-bottom: 12px;">数据</p>
+      <div class="stack-2">
+        <button type="button" class="btn btn-ghost" id="btn-reset">重置全部设置 <span class="arrow">↺</span></button>
+        <p class="meta" style="margin-top: 8px;">模型/出题/记忆/画面都会回到默认值</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============== 2. 模型 ============== -->
+<section>
+  <h2 class="h-section"><span>模型配置</span><span class="h-index">db · restart on save</span></h2>
+
+  <form id="form-model" class="stack-4" style="margin-top: 16px;">
+    <div class="grid-2">
+      <div>
+        <p class="eyebrow" style="margin-bottom: 12px;">LLM(对话 + 抽取 + 点评)</p>
+        <div class="stack-3">
+          <div>
+            <label>API 格式(厂商预设)</label>
+            <select name="llm_provider" id="llm-provider">
+              <option value="vllm"      {% if ui.model.llm_provider=='vllm' %}selected{% endif %}>vLLM(本地部署)</option>
+              <option value="deepseek"  {% if ui.model.llm_provider=='deepseek' %}selected{% endif %}>DeepSeek 官方 API</option>
+              <option value="openai"    {% if ui.model.llm_provider=='openai' %}selected{% endif %}>OpenAI</option>
+              <option value="moonshot"  {% if ui.model.llm_provider=='moonshot' %}selected{% endif %}>Kimi(Moonshot)</option>
+              <option value="zhipu"     {% if ui.model.llm_provider=='zhipu' %}selected{% endif %}>智谱 GLM</option>
+              <option value="dashscope" {% if ui.model.llm_provider=='dashscope' %}selected{% endif %}>通义千问(DashScope)</option>
+              <option value="custom"    {% if ui.model.llm_provider=='custom' %}selected{% endif %}>自定义(OpenAI 兼容)</option>
+            </select>
+            <p class="meta" style="margin-top: 8px;">切换后自动填充 Base URL 与 Model;所有预设均走 OpenAI 兼容格式</p>
+          </div>
+          <div>
+            <label>Base URL</label>
+            <input type="text" name="llm_base_url" id="llm-base-url" value="{{ ui.model.llm_base_url }}" />
+          </div>
+          <div>
+            <label>API Key</label>
+            <input type="password" name="llm_api_key" id="llm-api-key" value="{{ ui.model.llm_api_key }}" placeholder="本机 vLLM 填 EMPTY;云 API 填真实 key" />
+            <p class="meta" style="margin-top: 8px;">显示为 ****xxxx 表示已保存,留空或不改则保留原值</p>
+          </div>
+          <div class="grid-2" style="gap: 16px;">
+            <div>
+              <label>Model</label>
+              <input type="text" name="llm_model" id="llm-model" value="{{ ui.model.llm_model }}" />
+            </div>
+            <div>
+              <label>Temperature</label>
+              <input type="number" name="llm_temperature" value="{{ ui.model.llm_temperature }}" step="0.1" min="0" max="2" />
+            </div>
+          </div>
+          <div>
+            <label>Timeout(秒)</label>
+            <input type="number" name="llm_timeout" value="{{ ui.model.llm_timeout }}" min="5" max="300" />
+          </div>
+          <div>
+            <label>思考模式(Qwen3 类思考模型)</label>
+            <select name="disable_thinking">
+              <option value=""      {% if not ui.model.llm_disable_thinking %}selected{% endif %}>自动(按厂商预设)</option>
+              <option value="true"  {% if ui.model.llm_disable_thinking=='true' %}selected{% endif %}>关闭思考(自建 Qwen3 推荐)</option>
+              <option value="false" {% if ui.model.llm_disable_thinking=='false' %}selected{% endif %}>保留思考(输出可能含 think 内容)</option>
+            </select>
+            <p class="meta" style="margin-top: 8px;">自建 OpenAI 兼容服务跑 Qwen3 思考版时请选"关闭思考",否则思考内容会混入点评/档案输出</p>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <p class="eyebrow" style="margin-bottom: 12px;">Embedding(检索 + 合并)</p>
+        <div class="stack-3">
+          <div>
+            <label>Base URL</label>
+            <input type="text" name="embed_base_url" value="{{ ui.model.embed_base_url }}" />
+          </div>
+          <div>
+            <label>API Key</label>
+            <input type="password" name="embed_api_key" value="{{ ui.model.embed_api_key }}" />
+          </div>
+          <div class="grid-2" style="gap: 16px;">
+            <div>
+              <label>Model</label>
+              <input type="text" name="embed_model" value="{{ ui.model.embed_model }}" />
+            </div>
+            <div>
+              <label>Dim</label>
+              <input type="number" name="embed_dim" value="{{ ui.model.embed_dim }}" min="64" max="4096" step="64" />
+            </div>
+          </div>
+          <p class="meta">查询侧会自动加 BGE 检索指令前缀。</p>
+        </div>
+      </div>
+    </div>
+    <div style="display: flex; gap: 16px; align-items: center;">
+      <button type="submit" class="btn">保存模型配置 <span class="arrow">→</span></button>
+      <span class="meta" id="form-model-status"></span>
+    </div>
+  </form>
+</section>
+
+<!-- ============== 3. 出题 ============== -->
+<section>
+  <h2 class="h-section"><span>出题</span><span class="h-index">db</span></h2>
+
+  <form id="form-interview" class="stack-4" style="margin-top: 16px;">
+    <div class="grid-3">
+      <div>
+        <label>每场题数</label>
+        <input type="number" name="questions_per_session" value="{{ ui.interview.questions_per_session }}" min="1" max="20" />
+      </div>
+      <div>
+        <label>弱点再训练</label>
+        <input type="number" name="weakness_ratio" value="{{ ui.interview.weakness_ratio }}" min="0" max="20" />
+      </div>
+      <div>
+        <label>简历深挖</label>
+        <input type="number" name="resume_ratio" value="{{ ui.interview.resume_ratio }}" min="0" max="20" />
+      </div>
+      <div>
+        <label>岗位新知</label>
+        <input type="number" name="new_ratio" value="{{ ui.interview.new_ratio }}" min="0" max="20" />
+      </div>
+      <div>
+        <label>查重窗口(天)</label>
+        <input type="number" name="dedup_days" value="{{ ui.interview.dedup_days }}" min="1" max="365" />
+      </div>
+    </div>
+    <div style="display: flex; gap: 16px; align-items: center;">
+      <button type="submit" class="btn">保存出题设置 <span class="arrow">→</span></button>
+      <span class="meta" id="form-interview-status"></span>
+    </div>
+  </form>
+</section>
+
+<!-- ============== 4. 记忆 ============== -->
+<section>
+  <h2 class="h-section"><span>记忆引擎(W2 生效)</span><span class="h-index">db</span></h2>
+
+  <form id="form-memory" class="stack-4" style="margin-top: 16px;">
+    <div class="grid-3">
+      <div>
+        <label>记忆引擎开关</label>
+        <select name="enabled">
+          <option value="true"  {% if ui.memory.enabled == 'true'  %}selected{% endif %}>开启</option>
+          <option value="false" {% if ui.memory.enabled == 'false' %}selected{% endif %}>关闭</option>
+        </select>
+        <p class="meta" style="margin-top: 8px;">关闭后出题器不查记忆,走纯题库兜底</p>
+      </div>
+      <div></div>
+      <div></div>
+      <div>
+        <label>合并阈值(0~1)</label>
+        <input type="number" name="merge_threshold" value="{{ ui.memory.merge_threshold }}" step="0.01" min="0" max="1" />
+        <p class="meta" style="margin-top: 8px;">相似度 &gt; 此值合并</p>
+      </div>
+      <div>
+        <label>单场记忆上限</label>
+        <input type="number" name="max_per_session" value="{{ ui.memory.max_per_session }}" min="1" max="50" />
+      </div>
+      <div>
+        <label>IDLE 天数(无强化)</label>
+        <input type="number" name="idle_days" value="{{ ui.memory.idle_days }}" min="1" max="365" />
+      </div>
+      <div>
+        <label>弱点半衰期(天)</label>
+        <input type="number" name="half_life_weakness" value="{{ ui.memory.half_life_weakness }}" min="1" max="365" step="0.5" />
+      </div>
+      <div>
+        <label>事实半衰期(天)</label>
+        <input type="number" name="half_life_fact" value="{{ ui.memory.half_life_fact }}" min="1" max="365" step="0.5" />
+      </div>
+      <div>
+        <label>偏好半衰期(天)</label>
+        <input type="number" name="half_life_pref" value="{{ ui.memory.half_life_pref }}" min="1" max="365" step="0.5" />
+      </div>
+    </div>
+    <div style="display: flex; gap: 16px; align-items: center;">
+      <button type="submit" class="btn">保存记忆设置 <span class="arrow">→</span></button>
+      <span class="meta" id="form-memory-status"></span>
+    </div>
+  </form>
+</section>
+
+<!-- ============== 5. Tokens 使用统计 ============== -->
+<section>
+  <h2 class="h-section"><span>Tokens 使用统计</span><span class="h-index">LLM 调用累计</span></h2>
+
+  <div class="grid-4" style="margin-top: 16px;">
+    <div>
+      <p class="eyebrow">总调用次数</p>
+      <p style="font-family: var(--font-serif); font-size: 36px; line-height: 1.1; margin-top: 8px;">{{ tokens.total_calls }}</p>
+    </div>
+    <div>
+      <p class="eyebrow">输入 tokens</p>
+      <p style="font-family: var(--font-serif); font-size: 36px; line-height: 1.1; margin-top: 8px;">{{ tokens.total_prompt }}</p>
+    </div>
+    <div>
+      <p class="eyebrow">输出 tokens</p>
+      <p style="font-family: var(--font-serif); font-size: 36px; line-height: 1.1; margin-top: 8px;">{{ tokens.total_completion }}</p>
+    </div>
+    <div>
+      <p class="eyebrow">合计</p>
+      <p style="font-family: var(--font-serif); font-size: 36px; line-height: 1.1; margin-top: 8px;">{{ tokens.total_all }}</p>
+    </div>
+  </div>
+
+  {% if tokens.by_purpose %}
+  <div style="margin-top: 32px;">
+    <p class="eyebrow" style="margin-bottom: 12px;">按用途</p>
+    <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+      <thead>
+        <tr style="border-bottom: 1px solid var(--rule); text-align: left;">
+          <th style="padding: 8px 0;">用途</th><th>次数</th><th>输入</th><th>输出</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in tokens.by_purpose %}
+        <tr style="border-bottom: 1px solid var(--rule-2);">
+          <td class="mono" style="padding: 8px 0;">{{ row.purpose }}</td>
+          <td>{{ row.calls }}</td>
+          <td>{{ row.prompt_tokens }}</td>
+          <td>{{ row.completion_tokens }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted" style="margin-top: 16px;">尚无 LLM 调用记录。生成档案 / 面试点评 / 记忆抽取都会在此累计。</p>
+  {% endif %}
+</section>
+
+<script>
+// ============== LLM 厂商预设:切换 provider 自动填充 base_url + model ==============
+(function () {
+  var PRESETS = {{ presets | tojson }};
+  var sel = document.getElementById('llm-provider');
+  if (!sel) return;
+  sel.addEventListener('change', function () {
+    var p = PRESETS[sel.value];
+    if (!p) return;
+    if (p.base_url) document.getElementById('llm-base-url').value = p.base_url;
+    if (p.model) document.getElementById('llm-model').value = p.model;
+  });
+})();
+</script>
+
+<script>
+// ============== 画面设置(localStorage + 实时) ==============
+(function () {
+  var html = document.documentElement;
+  var toast = document.getElementById('toast');
+
+  function showToast(msg, isError) {
+    toast.textContent = msg;
+    toast.style.background = isError ? '#aa0000' : 'var(--ink)';
+    toast.style.opacity = '1';
+    setTimeout(function () { toast.style.opacity = '0'; }, 1800);
+  }
+
+  function highlightActive(group, attr, value) {
+    group.querySelectorAll('[data-' + attr + ']').forEach(function (b) {
+      var active = b.getAttribute('data-' + attr) === value;
+      b.style.borderColor = active ? 'var(--ink)' : 'var(--rule-2)';
+      b.style.background = active ? 'var(--ink)' : 'var(--bg)';
+      b.style.color = active ? 'var(--inverse-ink)' : 'var(--ink)';
+    });
+  }
+
+  // 初始高亮
+  highlightActive(document.getElementById('theme-grid'), 'theme',   html.getAttribute('data-theme'));
+  highlightActive(document.getElementById('size-grid'),  'size',    html.getAttribute('data-size'));
+  highlightActive(document.getElementById('density-grid'), 'density', html.getAttribute('data-density'));
+
+  document.getElementById('theme-grid').addEventListener('click', function (e) {
+    var t = e.target.closest('[data-theme]'); if (!t) return;
+    var v = t.getAttribute('data-theme');
+    html.setAttribute('data-theme', v);
+    localStorage.setItem('jb.theme', v);
+    highlightActive(document.getElementById('theme-grid'), 'theme', v);
+    showToast('主题已切换');
+  });
+  document.getElementById('size-grid').addEventListener('click', function (e) {
+    var t = e.target.closest('[data-size]'); if (!t) return;
+    var v = t.getAttribute('data-size');
+    html.setAttribute('data-size', v);
+    localStorage.setItem('jb.size', v);
+    highlightActive(document.getElementById('size-grid'), 'size', v);
+    showToast('字号已切换');
+  });
+  document.getElementById('density-grid').addEventListener('click', function (e) {
+    var t = e.target.closest('[data-density]'); if (!t) return;
+    var v = t.getAttribute('data-density');
+    html.setAttribute('data-density', v);
+    localStorage.setItem('jb.density', v);
+    highlightActive(document.getElementById('density-grid'), 'density', v);
+    showToast('密度已切换');
+  });
+
+  // ============== 表单提交(后端持久化) ==============
+  function bindForm(formId, groupKey, statusId) {
+    var form = document.getElementById(formId);
+    var status = document.getElementById(statusId);
+    var submitBtn = form.querySelector('button[type=submit]');
+    form.addEventListener('submit', function (e) {
+      e.preventDefault();
+      var obj = {};
+      var groupObj = {};
+      new FormData(form).forEach(function (v, k) { groupObj[k] = v; });
+      obj[groupKey] = groupObj;
+      submitBtn.disabled = true;
+      status.textContent = '保存中…';
+      fetch('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(obj) })
+        .then(function (r) { return r.json(); })
+        .then(function (j) {
+          if (j.ok) { status.textContent = '已保存 · ' + j.updated.length + ' 项'; showToast('已保存'); }
+          else { status.textContent = '失败: ' + (j.error || '未知'); showToast('保存失败', true); }
+        })
+        .catch(function (err) { status.textContent = '失败: ' + err.message; showToast('保存失败', true); })
+        .finally(function () { submitBtn.disabled = false; });
+    });
+  }
+  bindForm('form-model',     'model',     'form-model-status');
+  bindForm('form-interview', 'interview', 'form-interview-status');
+  bindForm('form-memory',    'memory',    'form-memory-status');
+
+  // 重置
+  document.getElementById('btn-reset').addEventListener('click', function () {
+    if (!confirm('确认重置全部设置为默认值?此操作不影响业务数据。')) return;
+    fetch('/api/settings/reset', { method: 'POST' })
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        if (j.ok) {
+          alert('已重置,刷新页面生效');
+          setTimeout(function () { location.reload(); }, 800);
+        } else {
+          alert('重置失败');
+        }
+      })
+      .catch(function (err) { alert('请求失败: ' + err.message); });
+  });
+})();
+</script>
+
+{% endblock %}
