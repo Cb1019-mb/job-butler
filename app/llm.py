@@ -13,6 +13,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Iterator
 
+import httpx
 from openai import OpenAI
 
 from .config import LLM_TEMPERATURE
@@ -49,6 +50,8 @@ def get_client() -> OpenAI:
         api_key=sig[2] or "EMPTY",
         base_url=sig[1],
         timeout=float(sig[3] or 30),
+        # trust_env=False:不走系统代理,防止本机代理劫持 localhost 端点(返回 404)
+        http_client=httpx.Client(trust_env=False),
     )
     _client_signature = sig
     return _client
@@ -157,6 +160,8 @@ def __getattr__(name: str):
         "extract_profile",
         "judge_answer",
         "judge_answer_stream",
+        "answer_is_irrelevant",
+        "build_irrelevant_score",
         "generate_resume_questions",
         "generate_targeted_questions",
         "generate_session_summary",

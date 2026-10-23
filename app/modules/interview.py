@@ -16,7 +16,7 @@ import threading
 from typing import Any
 
 from .. import db
-from ..llm import generate_resume_questions, generate_session_summary, generate_targeted_questions, judge_answer, judge_answer_stream
+from ..llm import answer_is_irrelevant, build_irrelevant_score, generate_resume_questions, generate_session_summary, generate_targeted_questions, judge_answer, judge_answer_stream
 from . import profile, question_bank, settings as _settings
 
 log = logging.getLogger(__name__)
@@ -369,12 +369,16 @@ def submit_answer(
     scoring_points: list[str],
 ) -> dict[str, Any]:
     """同步版:一次性拿三轴评分,落库,返回 score 字典。"""
-    score = judge_answer(
-        question=question,
-        reference_answer=reference_answer,
-        scoring_points=scoring_points,
-        answer=answer,
-    )
+    if answer_is_irrelevant(answer, question, reference_answer, scoring_points):
+        # 跑题/空话不过 LLM:4B 模型会把它幻觉成高分点评
+        score = build_irrelevant_score(scoring_points)
+    else:
+        score = judge_answer(
+            question=question,
+            reference_answer=reference_answer,
+            scoring_points=scoring_points,
+            answer=answer,
+        )
     qa_id = db.execute(
         """
         INSERT INTO qa_log(session_id, question, question_source, answer, score_json, reference_answer)
@@ -417,6 +421,19 @@ def submit_answer_stream(
     修复:原先 done 要等整场记忆抽取(每题一次 LLM,10~30s)才发出,
     前端按钮长时间停在"点评中",看起来像无响应。
     """
+    if answer_is_irrelevant(answer, question, reference_answer, scoring_points):
+        # 与同步版对齐:跑题/空话不过 LLM
+        score = build_irrelevant_score(scoring_points)
+        qa_id = db.execute(
+            """
+            INSERT INTO qa_log(session_id, question, question_source, answer, score_json, reference_answer)
+            VALUES (?,?,?,?,?,?)
+            """,
+            (session_id, question, question_source, answer, json.dumps(score, ensure_ascii=False), reference_answer),
+        )
+        yield {"type": "done", "id": qa_id, "score": score}
+        _bg_extract(session_id)
+        return
     scoring_text = "\n".join(f"- {p}" for p in scoring_points)
     buf: list[str] = []
     for chunk in judge_answer_stream(question, reference_answer, scoring_text, answer):
@@ -425,7 +442,7 @@ def submit_answer_stream(
     full = "".join(buf)
     # 流式路径同样要做键名容错/Schema 归一化(与同步版 judge_answer 一致):
     # 模型可能返回扁平数字分 {"tech_correctness": 3},不归一会让后续读取崩溃
-    from ..json_utils import extract_json, normalize_keys, validate_schema
+    from ..json_utils import ensure_judge_citations, extract_json, judge_looks_like_placeholder, normalize_keys, validate_schema
     from ..llm import JUDGE_SCHEMA
     score: dict[str, Any] = {"raw": full}
     try:
@@ -439,6 +456,19 @@ def submit_answer_stream(
                 score = normalize_keys(json.loads(m.group(0)), kind="judge")
             except Exception:
                 pass
+    # 与同步版 judge_answer 容错对齐:模型空引用时用采分点补 missed_points,保证点评有依据
+    score = ensure_judge_citations(score, scoring_points)
+    # 流式无法中途重试:检测到照抄示例的点评,改用同步版重评一次再落库(done 事件携带重评结果,
+    # 前端用它替换原始流式内容展示)
+    if judge_looks_like_placeholder(score):
+        log.warning("stream judge echoed the prompt example, re-judging synchronously")
+        try:
+            score = judge_answer(
+                question=question, reference_answer=reference_answer,
+                scoring_points=scoring_points, answer=answer,
+            )
+        except Exception as e:
+            log.warning("stream judge re-ask failed: %s", e)
     qa_id = db.execute(
         """
         INSERT INTO qa_log(session_id, question, question_source, answer, score_json, reference_answer)

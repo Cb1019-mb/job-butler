@@ -9,11 +9,20 @@
 """
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
+
+# 隔离:验收脚本写独立临时库(每次运行重建),不碰真实库 data/job_butler.db。
+_TEST_DB = ROOT / "data" / "test_w3.db"
+for _suffix in ("", "-wal", "-shm"):
+    _p = Path(str(_TEST_DB) + _suffix)
+    if _p.exists():
+        _p.unlink()
+os.environ["JOB_BUTLER_DB"] = str(_TEST_DB)
 
 from app import db  # noqa: E402
 from app.db import init_db  # noqa: E402

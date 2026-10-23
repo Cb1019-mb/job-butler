@@ -21,6 +21,8 @@ def create_or_update(resume_text: str, jd_text: str, name: str = "") -> int:
         skills = extract_profile(resume_text, jd_text)
     except Exception as e:
         log.warning("extract_profile failed, fallback to raw: %s", e)
+        # 记录失败原因,模板据此显示错误横幅,而不是把空档案伪装成"正常解析结果"
+        skills["_parse_error"] = str(e)
     return db.execute(
         "INSERT INTO profile(name, resume_text, parsed_skills_json, target_jd) VALUES (?,?,?,?)",
         (name, resume_text, json.dumps(skills, ensure_ascii=False), jd_text),

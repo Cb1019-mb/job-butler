@@ -13,12 +13,21 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
+
+# 隔离:验收脚本写独立临时库(每次运行重建),不碰真实库 data/job_butler.db。
+_TEST_DB = ROOT / "data" / "test_w2.db"
+for _suffix in ("", "-wal", "-shm"):
+    _p = Path(str(_TEST_DB) + _suffix)
+    if _p.exists():
+        _p.unlink()
+os.environ["JOB_BUTLER_DB"] = str(_TEST_DB)
 
 _SKIP_SLOW = "--skip-slow" in sys.argv
 

@@ -74,11 +74,6 @@ def extract_json(text: str) -> Any:
 # ---------- 归一化 ----------
 
 _JUDGE_AXES = ("tech_correctness", "completeness", "structure")
-_JUDGE_AXIS_FILL_KEYS = {
-    "tech_correctness": ("comment", "cited_points"),
-    "completeness":     ("comment", "missed_points"),
-    "structure":         ("comment", "suggestion"),
-}
 _JUDGE_AXIS_ALIAS = {
     "accuracy": "tech_correctness", "tech": "tech_correctness",
     "comp": "completeness",
@@ -132,13 +127,64 @@ def _normalize_judge(data: dict[str, Any]) -> dict[str, Any]:
                + data["completeness"]["score"]
                + data["structure"]["score"]) / 3
         data["overall"] = f"三轴均分 {avg:.2f}/5"
-    # 5) 子字段保底
-    for axis, missing_keys in _JUDGE_AXIS_FILL_KEYS.items():
+    # 5) 子字段保底 + 类型纠偏:模型可能把 cited/missed 写成单个字符串甚至数字
+    #    (实测 qwen3-4b 会返回"引用条数"而非列表),不纠偏会被 validate 拒收导致点评整体失败;
+    #    纠偏成空列表后,由 ensure_judge_citations 用真实采分点补 missed_points
+    for axis in _JUDGE_AXES:
         ax = data[axis]
-        for k in missing_keys:
-            if k not in ax:
-                ax[k] = "" if k in ("comment", "suggestion") else []
+        for k in ("cited_points", "missed_points"):
+            v = ax.get(k)
+            if isinstance(v, str) and v.strip():
+                ax[k] = [v.strip()]
+            elif not isinstance(v, list):
+                ax[k] = []
+        ax.setdefault("comment", "")
+        ax.setdefault("suggestion", "")
     return data
+
+
+# 点评照抄 prompt 输出示例的特征:评语/引用里出现尖括号占位符(见 JUDGE_SYSTEM 结构示例)
+_PLACEHOLDER_PATTERN = re.compile(r"<[^<>]{2,30}>")
+
+
+def judge_looks_like_placeholder(score: dict[str, Any]) -> bool:
+    """检测点评是否照抄了 prompt 里的结构示例(评语/引用含 <占位符> 字样)。"""
+    if not isinstance(score, dict):
+        return False
+    texts: list[str] = []
+    for axis in _JUDGE_AXES:
+        ax = score.get(axis)
+        if isinstance(ax, dict):
+            texts.append(str(ax.get("comment") or ""))
+            texts.append(str(ax.get("suggestion") or ""))
+            texts += [str(x) for x in (ax.get("cited_points") or [])]
+            texts += [str(x) for x in (ax.get("missed_points") or [])]
+    if isinstance(score.get("overall"), str):
+        texts.append(score["overall"])
+    return any(_PLACEHOLDER_PATTERN.search(t) for t in texts if t)
+
+
+def ensure_judge_citations(score: dict[str, Any], scoring_points: list[str]) -> dict[str, Any]:
+    """点评保底:模型偶尔无视硬性要求返回空 cited_points/missed_points,点评就没有可核对依据。
+
+    先剔除照抄示例产生的占位符项;两者清空后仍全空且调用方提供了采分点时,
+    把采分点补进 tech_correctness.missed_points(只保证点评有据可查,不改动分数)。
+    """
+    if not isinstance(score, dict):
+        return score
+    tc = score.get("tech_correctness")
+    if not isinstance(tc, dict):
+        return score
+    for k in ("cited_points", "missed_points"):
+        v = tc.get(k)
+        if isinstance(v, list):
+            tc[k] = [x for x in v if not _PLACEHOLDER_PATTERN.search(str(x))]
+    if not scoring_points:
+        return score
+    if tc.get("cited_points") or tc.get("missed_points"):
+        return score
+    tc["missed_points"] = list(scoring_points)
+    return score
 
 
 def _normalize_profile(data: dict[str, Any]) -> dict[str, Any]:
@@ -158,6 +204,15 @@ def _normalize_profile(data: dict[str, Any]) -> dict[str, Any]:
     return data
 
 
+# 出题字段别名:小模型常把采分点写成 score_points / scoring_point(实测 qwen3-4b),
+# 归一化时搬到正名键,否则点评拿到空采分点、无评分依据
+_QUESTION_KEY_ALIAS = {
+    "score_points": "scoring_points",
+    "scoring_point": "scoring_points",
+    "采分点": "scoring_points",
+}
+
+
 def _normalize_question(data: dict[str, Any]) -> dict[str, Any]:
     """补 questions 数组;每个 q 字段补全;scoring_points 统一转字符串列表。"""
     if "questions" not in data or not isinstance(data["questions"], list):
@@ -165,6 +220,9 @@ def _normalize_question(data: dict[str, Any]) -> dict[str, Any]:
     for q in data["questions"]:
         if not isinstance(q, dict):
             continue
+        for alias, canonical in _QUESTION_KEY_ALIAS.items():
+            if alias in q and not q.get(canonical):
+                q[canonical] = q.pop(alias)
         q.setdefault("question", "")
         q.setdefault("reference_answer", "")
         q.setdefault("scoring_points", [])
@@ -257,8 +315,9 @@ def run_json_task(
     kind: str = "judge",
     max_attempts: int = 2,
     purpose: str = "llm",
+    content_check: Callable[[dict[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
-    """标准 4 步流水线:chat → extract_json → normalize → validate;失败重试。
+    """标准 4 步流水线:chat → extract_json → normalize → validate(→ content_check);失败重试。
 
     Args:
         chat: 实际发请求的函数,签名 (messages, *, temperature=None, purpose=...) -> str。
@@ -269,6 +328,7 @@ def run_json_task(
         kind:   normalize 类型("judge" / "profile" / "question")
         max_attempts: 重试次数
         purpose: 日志标签
+        content_check: 形校验之后的语义校验,不合格 raise 即触发重试(如检测照抄示例)
     """
     last_err: Exception | None = None
     for attempt in range(max_attempts):
@@ -282,6 +342,8 @@ def run_json_task(
             )
             data = normalize_keys(extract_json(text), kind)
             validate_schema(data, schema)
+            if content_check:
+                content_check(data)
             return data
         except Exception as e:
             last_err = e

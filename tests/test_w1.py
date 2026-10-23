@@ -17,6 +17,15 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+# 隔离:验收脚本写独立临时库(每次运行重建),不碰真实库 data/job_butler.db。
+# 共享真库时,30 天查重池被历史 session_question 污染,出题配比用例结果不稳定。
+_TEST_DB = ROOT / "data" / "test_w1.db"
+for _suffix in ("", "-wal", "-shm"):
+    _p = Path(str(_TEST_DB) + _suffix)
+    if _p.exists():
+        _p.unlink()
+os.environ["JOB_BUTLER_DB"] = str(_TEST_DB)
+
 from app.config import (  # noqa: E402
     DEDUP_DAYS,
     MERGE_THRESHOLD,
@@ -86,7 +95,28 @@ assert len(bank) >= 50, f"题库至少 50 条,实际 {len(bank)}"
 print(f"  · 题库加载 OK,共 {len(bank)} 条")
 
 
+def without_llm(fn):
+    """封 LLM:临时把 base_url 指向不可达端点并重建客户端,保证走题库兜底。
+
+    出题配比 / 查重用例验证的是题库逻辑,需要确定性输出;
+    若不封端点,LLM 可达时出题器走 LLM 路径,配比断言必然失败。
+    """
+    def wrap():
+        from app.modules import settings as _s
+        from app import llm as _llm
+        orig = _s.get("llm.base_url")
+        _s.update_many({"llm.base_url": "http://127.0.0.1:9/v1"})
+        _llm.reset_client()
+        try:
+            fn()
+        finally:
+            _s.update_many({"llm.base_url": orig})
+            _llm.reset_client()
+    return wrap
+
+
 @t("出题器:5 题 / WEAKNESS×2 + RESUME×2 + NEW×1")
+@without_llm
 def _():
     # 隔离:清 qa_log,避免历史作答占满 30 天查重池导致题数不足(共享 DB 场景)
     from app import db as _db
@@ -104,8 +134,121 @@ _()
 print("[3] build_questions done", flush=True)
 
 
+# ---------- 3.5 出题 JSON 归一化(采分点别名,防点评无依据) ----------
+@t("出题 JSON:score_points 别名归一化进 scoring_points")
+def _():
+    from app.json_utils import normalize_keys
+    data = normalize_keys({
+        "questions": [
+            # 只写了别名键(模型常见行为)
+            {"question": "q1", "reference_answer": "r", "score_points": ["p1", "p2"], "category": "c"},
+            # 正名键为空 + 别名键有值(实测 qwen3-4b 双键并存)
+            {"question": "q2", "reference_answer": "r", "scoring_points": [], "score_points": ["p3"], "category": "c"},
+        ]
+    }, kind="question")
+    q1, q2 = data["questions"]
+    assert q1["scoring_points"] == ["p1", "p2"], q1
+    assert q2["scoring_points"] == ["p3"], q2
+_()
+
+
+# ---------- 3.6 点评保底:cited/missed 全空时用采分点补齐 ----------
+@t("点评保底:cited/missed 全空时用采分点补 missed_points")
+def _():
+    from app.json_utils import ensure_judge_citations
+    score = {
+        "tech_correctness": {"score": 2, "comment": "", "cited_points": [], "missed_points": []},
+        "completeness": {"score": 1, "comment": "", "missed_points": []},
+        "structure": {"score": 1, "comment": "", "suggestion": ""},
+        "overall": "x",
+    }
+    out = ensure_judge_citations(score, ["采分点A", "采分点B"])
+    assert out["tech_correctness"]["missed_points"] == ["采分点A", "采分点B"], out
+    # 模型已有引用时不覆盖
+    score2 = {"tech_correctness": {"score": 5, "comment": "", "cited_points": ["采分点A"], "missed_points": []}}
+    out2 = ensure_judge_citations(score2, ["采分点A", "采分点B"])
+    assert out2["tech_correctness"]["missed_points"] == [], out2
+    # 未提供采分点时不动作
+    score3 = {"tech_correctness": {"score": 0, "comment": "", "cited_points": [], "missed_points": []}}
+    assert ensure_judge_citations(score3, [])["tech_correctness"]["missed_points"] == []
+_()
+
+
+# ---------- 3.7 点评容错:cited/missed 写成数字/字符串时纠偏 ----------
+@t("点评容错:cited/missed 为数字时纠偏为数组并与保底组合")
+def _():
+    from app.json_utils import ensure_judge_citations, normalize_keys
+    score = normalize_keys({
+        "tech_correctness": {"cited_points": 3, "missed_points": 2},
+        "completeness": 3,
+        "structure": 2,
+    }, kind="judge")
+    tc = score["tech_correctness"]
+    assert isinstance(tc["cited_points"], list) and tc["cited_points"] == [], tc
+    assert isinstance(tc["missed_points"], list) and tc["missed_points"] == [], tc
+    # 纠偏成空列表后,保底函数用真实采分点补齐,点评有据可查
+    out = ensure_judge_citations(score, ["采分点1", "采分点2"])
+    assert out["tech_correctness"]["missed_points"] == ["采分点1", "采分点2"], out
+_()
+
+
+# ---------- 3.8 点评防照抄:占位符检测 + content_check 重试 ----------
+@t("点评防照抄:占位符点评被检测,content_check 触发重试")
+def _():
+    from app.json_utils import judge_looks_like_placeholder, run_json_task
+    echo = {
+        "tech_correctness": {"score": 0, "comment": "<针对作答的一句话技术点评>", "cited_points": [], "missed_points": []},
+        "completeness": {"score": 0, "comment": "", "missed_points": []},
+        "structure": {"score": 0, "comment": "", "suggestion": ""},
+        "overall": "<一句话总评>",
+    }
+    assert judge_looks_like_placeholder(echo) is True
+    clean = {
+        "tech_correctness": {"score": 1, "comment": "答非所问,未涉及任何采分点", "cited_points": [], "missed_points": ["p1"]},
+        "completeness": {"score": 0, "comment": "没有覆盖任何要点", "missed_points": []},
+        "structure": {"score": 0, "comment": "仅一句话,无结构", "suggestion": "围绕题目作答"},
+        "overall": "答非所问",
+    }
+    assert judge_looks_like_placeholder(clean) is False
+
+    calls = {"n": 0}
+    def fake_chat(messages, *, temperature=None, purpose="chat"):
+        calls["n"] += 1
+        return json.dumps(echo if calls["n"] == 1 else clean, ensure_ascii=False)
+
+    def _reject(data):
+        if judge_looks_like_placeholder(data):
+            raise ValueError("点评照抄了输出示例")
+
+    from app.llm import JUDGE_SCHEMA
+    score = run_json_task(fake_chat, system="s", user="u", schema=JUDGE_SCHEMA,
+                          kind="judge", content_check=_reject)
+    assert score["tech_correctness"]["comment"] == "答非所问,未涉及任何采分点", score
+    assert calls["n"] == 2, calls
+_()
+
+
+# ---------- 3.9 跑题拦截:词面重叠门控 + 确定性 0 分 ----------
+@t("跑题拦截:占位/空话作答判定为无关,正常短作答放行")
+def _():
+    from app.llm import answer_is_irrelevant, build_irrelevant_score
+    q = "请说明Redis AOF持久化机制的核心原理,并解释其与RDB持久化方式的差异"
+    ref = "AOF 通过记录所有写操作命令实现持久化;RDB 是快照持久化。AOF 文件更大但更完整。"
+    sps = ["AOF 记录写操作实现持久化", "AOF 与 RDB 的区别", "AOF 重写操作"]
+    assert answer_is_irrelevant("这是一个模拟面试题目回答", q, ref, sps) is True
+    assert answer_is_irrelevant("", q, ref, sps) is True
+    # 命中领域词的正常回答(哪怕简短)必须放行
+    assert answer_is_irrelevant("AOF 记录写命令,RDB 是快照,两者文件体积不同", q, ref, sps) is False
+    s = build_irrelevant_score(sps)
+    assert (s["tech_correctness"]["score"], s["completeness"]["score"], s["structure"]["score"]) == (0, 0, 0)
+    assert s["tech_correctness"]["missed_points"] == sps, s
+    assert "答非所问" in s["overall"]
+_()
+
+
 # ---------- 3. 30 天查重 ----------
 @t("30 天查重:新题与 qa_log 已有题不重复")
+@without_llm
 def _():
     sid = interview.start_session("测试", "公司A")
     qs1 = interview.build_questions(sid, "测试", jd_keywords=[])

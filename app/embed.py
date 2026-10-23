@@ -56,6 +56,8 @@ def _post_embeddings(inputs: list[str]) -> np.ndarray:
             json={"model": model, "input": inputs},
             headers={"Authorization": f"Bearer {api_key}"},
             timeout=httpx.Timeout(connect=1.5, read=20.0, write=5.0, pool=1.5),
+            # 不走系统代理,防止本机代理劫持 localhost 端点(返回 404)
+            trust_env=False,
         )
         resp.raise_for_status()
     except (httpx.ConnectError, httpx.ConnectTimeout, httpx.ReadTimeout, httpx.HTTPError) as e:

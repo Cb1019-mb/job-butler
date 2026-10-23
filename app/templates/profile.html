@@ -57,6 +57,13 @@
 <section>
   <h2 class="h-section"><span>{% if profile.name %}{{ profile.name }}{% else %}当前档案{% endif %}</span><span class="h-index mono">#{{ profile.id }}</span></h2>
 
+  {% if profile.parsed_skills.get('_parse_error') %}
+  <div style="margin-top: 16px; padding: 16px 20px; border: 1px solid var(--rule); background: var(--bg-2);">
+    <strong style="margin-right: 8px;">⚠ LLM 解析失败</strong>
+    <span style="color: var(--ink-3);">{{ profile.parsed_skills['_parse_error'] }} — 档案仅保存了原文,请到 <a href="/settings">设置页</a> 检查模型端点后重新生成。</span>
+  </div>
+  {% endif %}
+
   <div class="grid-2" style="margin-top: 16px;">
     <div>
       <p class="eyebrow" style="margin-bottom: 16px;">技能</p>
@@ -78,7 +85,7 @@
     <p class="eyebrow" style="margin-bottom: 16px;">疑似短板</p>
     <div class="tags">
       {% for s in profile.parsed_skills.weak_signals or [] %}<span class="tag tag-warn">{{ s }}</span>{% endfor %}
-      {% if not (profile.parsed_skills.weak_signals or []) %}<span class="muted">未识别到明显短板</span>{% endif %}
+      {% if not (profile.parsed_skills.weak_signals or []) %}<span class="muted">{% if profile.parsed_skills.get('_parse_error') %}解析失败,无数据{% else %}未识别到明显短板{% endif %}</span>{% endif %}
     </div>
   </div>
 

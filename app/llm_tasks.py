@@ -10,11 +10,14 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from typing import Any, Callable, Iterator
 
 from . import llm as _llm
 from .json_utils import (
+    ensure_judge_citations,
     extract_json,
+    judge_looks_like_placeholder,
     normalize_keys,
     run_json_task,
     validate_schema,
@@ -137,10 +140,14 @@ JUDGE_SYSTEM = """你是严格的 AI 面试官,按三轴 rubric 给候选人的�
 - structure(表达结构):逻辑是否清晰(STAR/分层/总分总),语言是否专业
 
 硬性要求:
-1. 必须从【采分点】中引用至少 1 条作为 cited_points 或 missed_points(放 tech_correctness.cited_points / missed_points)
-2. 不要打"总分",只给三轴分
-3. 即使题目看起来"特殊"(如项目介绍、行为面),也用同一套三轴评估,不要自创维度
-4. 只输出严格符合 JSON Schema 的 JSON,不要任何解释或 markdown 包裹,不要在 JSON 外加任何文字"""
+1. 逐条核对【采分点】:cited_points / missed_points 必须逐字取自【采分点】列表(不得自行编写或从参考答案摘抄);候选人答中的进 cited_points,未答中的进 missed_points;两者不允许同时为空
+2. 分数和评语必须针对【候选人作答】的实际内容独立评判,严禁照抄下方示例中的任何分数或文字
+3. 作答跑题、空话套话、或与题目无关时:三轴各给 0~1 分,cited_points 留空数组,missed_points 写入未覆盖的采分点,overall 明确指出"答非所问"
+4. 不要打"总分",只给三轴分;即使题目"特殊"(项目介绍、行为面)也用同一套三轴
+5. 只输出严格符合 JSON Schema 的 JSON,不要任何解释或 markdown 包裹
+
+输出结构示例(仅演示字段类型与层级,score 是 0~5 数字、两个 points 是字符串数组;示例中的 0 分和尖括号占位符不是评分参考,照抄即为错误):
+{"tech_correctness": {"score": 0, "comment": "<针对作答的一句话技术点评>", "cited_points": ["<答中的采分点原文>"], "missed_points": ["<未答中的采分点原文>"]}, "completeness": {"score": 0, "comment": "<相对采分点的覆盖程度>", "missed_points": []}, "structure": {"score": 0, "comment": "<结构与表达评价>", "suggestion": "<一条改进建议>"}, "overall": "<一句话总评>"}"""
 
 
 def judge_answer(
@@ -149,21 +156,28 @@ def judge_answer(
     scoring_points: list[str],
     answer: str,
 ) -> dict[str, Any]:
+    # 作答紧跟题目(模型对末尾与近端内容注意力最强),参考答案/采分点只作评判基准
     user = (
         f"【题目】\n{question}\n\n"
+        f"【候选人作答】\n{answer}\n\n"
         f"【参考答案】\n{reference_answer}\n\n"
         f"【采分点】\n" + "\n".join(f"- {p}" for p in scoring_points) + "\n\n"
-        f"【候选人作答】\n{answer}\n\n"
-        "请按 Schema 输出 JSON。"
+        "评分前先通读【候选人作答】原文,再逐条核对【采分点】,按 Schema 输出 JSON。"
     )
-    return run_json_task(
+    def _reject_placeholder(data: dict[str, Any]) -> None:
+        if judge_looks_like_placeholder(data):
+            raise ValueError("点评照抄了输出示例,未基于实际作答评分")
+
+    score = run_json_task(
         _llm._chat,
         system=JUDGE_SYSTEM,
         user=user,
         schema=JUDGE_SCHEMA,
         kind="judge",
         purpose="judge",
+        content_check=_reject_placeholder,
     )
+    return ensure_judge_citations(score, scoring_points)
 
 
 def judge_answer_stream(
@@ -173,12 +187,13 @@ def judge_answer_stream(
     answer: str,
 ) -> Iterator[str]:
     """流式版点评:逐 chunk 推 JSON 文本片段(简单透传,前端用 JS 拼接)。"""
+    # 与 judge_answer 的段落顺序保持一致:作答紧跟题目
     user = (
         f"【题目】\n{question}\n\n"
+        f"【候选人作答】\n{answer}\n\n"
         f"【参考答案】\n{reference_answer}\n\n"
         f"【采分点】\n{scoring_points}\n\n"
-        f"【候选人作答】\n{answer}\n\n"
-        "请按 Schema 输出 JSON。"
+        "评分前先通读【候选人作答】原文,再逐条核对【采分点】,按 Schema 输出 JSON。"
     )
     kwargs = _llm._build_chat_kwargs(
         [
@@ -196,6 +211,68 @@ def judge_answer_stream(
         delta = chunk.choices[0].delta.content if chunk.choices else None
         if delta:
             yield delta
+
+
+# ---------- 2.5 作答相关性拦截(跑题/空话不过 LLM,直接给 0 分点评) ----------
+
+def _text_tokens(text: str) -> set[str]:
+    """CJK 2-gram + 拉丁词(≥2 字符),用于粗糙的词面相关性比对。
+
+    注意不能用 str.isalnum() 判拉丁词:它对汉字也返回 True(Unicode 感知),
+    会把 "AOF记录写命令" 整段吞成一个 token。
+    """
+    text = re.sub(r"\s+", "", text or "")
+    tokens: set[str] = set()
+    i, n = 0, len(text)
+    while i < n:
+        ch = text[i]
+        if "\u4e00" <= ch <= "\u9fff":
+            if i + 1 < n:
+                tokens.add(text[i:i + 2])
+            i += 1
+        elif ch.isascii() and ch.isalnum():
+            j = i
+            while j < n and text[j].isascii() and text[j].isalnum():
+                j += 1
+            if j - i >= 2:
+                tokens.add(text[i:j].lower())
+            i = j
+        else:
+            i += 1
+    return tokens
+
+
+def answer_is_irrelevant(answer: str, question: str, reference_answer: str, scoring_points: list[str]) -> bool:
+    """作答与题目/参考答案/采分点几乎无词面重叠时判定为跑题或空话。
+
+    只拦退化的无效作答(占位文本、空话套话),避免 4B 模型把它们幻觉成高分点评;
+    命中任意领域词的正常回答(哪怕很短)都放行走 LLM 点评。
+    """
+    ans = (answer or "").strip()
+    if len(ans) < 6:
+        return True
+    corpus = _text_tokens(f"{question} {reference_answer} {' '.join(scoring_points)}")
+    if not corpus:
+        return False
+    atoks = _text_tokens(ans)
+    if not atoks:
+        return True
+    return len(atoks & corpus) / len(atoks) < 0.08
+
+
+def build_irrelevant_score(scoring_points: list[str]) -> dict[str, Any]:
+    """跑题作答的确定性 0 分点评(missed_points 带全部采分点,保证有据可查)。"""
+    return {
+        "tech_correctness": {
+            "score": 0,
+            "comment": "作答与题目无关或为空话,无技术内容可评估",
+            "cited_points": [],
+            "missed_points": list(scoring_points),
+        },
+        "completeness": {"score": 0, "comment": "未覆盖任何采分点", "missed_points": []},
+        "structure": {"score": 0, "comment": "无有效内容结构可评估", "suggestion": "围绕题目要求组织作答,先结论后展开"},
+        "overall": "答非所问:作答内容与题目无关",
+    }
 
 
 # ---------- 3. 出题(简历深挖 + 岗位新知,W1 用) ----------
@@ -342,6 +419,7 @@ def generate_session_summary(qa_items: list[dict[str, Any]]) -> str:
 __all__ = [
     "PROFILE_SCHEMA", "PROFILE_SYSTEM", "extract_profile",
     "JUDGE_SCHEMA", "JUDGE_SYSTEM", "judge_answer", "judge_answer_stream",
+    "answer_is_irrelevant", "build_irrelevant_score",
     "QUESTION_GEN_SCHEMA", "generate_resume_questions", "generate_targeted_questions",
     "SUMMARY_SYSTEM", "generate_session_summary",
 ]
