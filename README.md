@@ -1,5 +1,11 @@
 # 求职管家 · Job Butler
 
+[![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![FastAPI 0.110+](https://img.shields.io/badge/FastAPI-0.110%2B-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
+[![SQLite WAL](https://img.shields.io/badge/SQLite-WAL-003B57?logo=sqlite&logoColor=white)](https://www.sqlite.org/wal.html)
+[![MCP 3 tools](https://img.shields.io/badge/MCP-3_tools-6E56CF)](#mcp-集成)
+[![License MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 > 会长期记住你的 AI 求职伙伴：把答错的知识点沉淀成记忆，在下一场面试里主动再训练，并按遗忘曲线自动衰减。
 
 求职管家是一个本地运行的 AI 面试陪练：导入简历与目标 JD 生成能力档案，进行模拟面试并获得逐题三轴点评；暴露出的弱点会自动沉淀为记忆，在后续出题中优先覆盖。投递进展用看板管理，每周生成成长报告，记忆库同时通过 MCP 向 IDE Agent 开放。
